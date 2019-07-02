@@ -1,34 +1,34 @@
 package main
 
 import (
-	"fmt"
-	"image"
-	"image/color"
-	"image/png"
 	"math"
 	"math/rand"
-	"os"
-	"strconv"
 )
 
 // Generator generates random2d heightmap using square-diamond algorithm
 type Generator struct {
-	Roughness     float64
-	Height, Width int
-	stepSize      int
-	hmap          [][]float64
-	currRoughness float64
+	Roughness           float64
+	Height, Width       int
+	stepSize            int
+	hmap                [][]float64
+	currRoughness       float64
+	genHeight, genWidth int
+	transposed          bool
 }
 
 // Generate creates heightmap
 func (gen *Generator) Generate() [][]float64 {
-	gen.hmap = createHeightMap(gen.Height, gen.Width)
+	gen.genHeight, gen.genWidth, gen.transposed = getGenerationSize(gen.Height, gen.Width)
+	gen.hmap = createHeightMap(gen.genHeight, gen.genWidth)
 	defer gen.eraseMap()
-	for i := 0; i < iterationsCount(gen.Height); i++ {
+	for i := 0; i < iterationsCount(gen.genHeight); i++ {
 		gen.currRoughness = math.Pow(gen.Roughness, float64(i))
-		gen.stepSize = (gen.Width - 1) / int(math.Pow(2, float64(i)))
+		gen.stepSize = (gen.genWidth - 1) / int(math.Pow(2, float64(i)))
 		gen.diamond()
 		gen.square()
+	}
+	if gen.transposed {
+		gen.hmap = transpose(gen.hmap)
 	}
 	return gen.hmap
 }
@@ -39,24 +39,15 @@ func (gen *Generator) eraseMap() {
 
 func (gen *Generator) square() {
 	halfStep, quaterStep := gen.stepSize/2, gen.stepSize/4
-	for i := 0; i < gen.Height; i += halfStep {
-		for j := quaterStep; j < gen.Width; j += halfStep {
+	for i := 0; i < gen.genHeight; i += halfStep {
+		for j := quaterStep; j < gen.genWidth; j += halfStep {
 			gen.hmap[i][j] = gen.squareDiscplace(i, j)
 		}
 	}
-	for i := quaterStep; i < gen.Height; i += halfStep {
-		for j := 0; j < gen.Width; j += halfStep {
+	for i := quaterStep; i < gen.genHeight; i += halfStep {
+		for j := 0; j < gen.genWidth; j += halfStep {
 			gen.hmap[i][j] = gen.squareDiscplace(i, j)
 		}
-	}
-}
-
-func printMap(hmap [][]float64) {
-	for _, row := range hmap {
-		for _, item := range row {
-			fmt.Printf("%5.2f", item)
-		}
-		fmt.Println()
 	}
 }
 
@@ -71,11 +62,11 @@ func (gen *Generator) squareDiscplace(i, j int) float64 {
 		total += gen.hmap[i][j-quaterStep]
 		count++
 	}
-	if i+quaterStep < gen.Height {
+	if i+quaterStep < gen.genHeight {
 		total += gen.hmap[i+quaterStep][j]
 		count++
 	}
-	if j+quaterStep < gen.Width {
+	if j+quaterStep < gen.genWidth {
 		total += gen.hmap[i][j+quaterStep]
 		count++
 	}
@@ -85,8 +76,8 @@ func (gen *Generator) squareDiscplace(i, j int) float64 {
 
 func (gen *Generator) diamond() {
 	halfStep, quaterStep := gen.stepSize/2, gen.stepSize/4
-	for i := quaterStep; i < gen.Height; i += halfStep {
-		for j := quaterStep; j < gen.Width-1; j += halfStep {
+	for i := quaterStep; i < gen.genHeight; i += halfStep {
+		for j := quaterStep; j < gen.genWidth-1; j += halfStep {
 			gen.hmap[i][j] = gen.diamondDiscplace(i, j)
 		}
 	}
@@ -119,58 +110,37 @@ func createHeightMap(height, width int) [][]float64 {
 
 func iterationsCount(height int) int {
 	return int(math.Log2(float64(height - 1)))
-	// TODO: check value here
 }
 
 func weightedAverage(val1Weight, val1, val2 float64) float64 {
 	return val1Weight*val1 + val2*(1-val1Weight)
 }
 
-func saveToFile(img *image.RGBA, filename string) {
-	f, err := os.Create(filename)
-	if err != nil {
-		panic("Can't create file")
+func getGenerationSize(height, width int) (int, int, bool) {
+	// biggest power of n
+	var transposed bool
+	if height > width {
+		transposed = true
+		width, height = height, width
 	}
-	png.Encode(f, img)
+	logWidth := math.Ceil(math.Log2(float64(width - 1)))
+	logHeight := math.Ceil(math.Log2(float64(height - 1)))
+	if logWidth <= logHeight {
+		logWidth++
+	}
+	return int(math.Pow(2, float64(logHeight))) + 1, int(math.Pow(2, float64(logWidth))) + 1, transposed
 }
 
-func createImage(buffer [][]float64, width, height int) *image.RGBA {
-	upLeft := image.Point{0, 0}
-	lowRight := image.Point{width, height}
-
-	img := image.NewRGBA(image.Rectangle{upLeft, lowRight})
-
-	// Colors are defined by Red, Green, Blue, Alpha uint8 values.
-	var col color.RGBA
-	for j := 0; j < width; j++ {
-		for i := 0; i < height; i++ {
-			baseColor := uint8(buffer[i][j] * 255)
-			col = color.RGBA{baseColor, baseColor, baseColor, 255}
-			img.Set(j, i, col)
+func transpose(m [][]float64) [][]float64 {
+	// https://rosettacode.org/wiki/Matrix_transposition#2D_representation
+	r := make([][]float64, len(m[0]))
+	for x := range r {
+		r[x] = make([]float64, len(m))
+	}
+	for y, s := range m {
+		for x, e := range s {
+			r[x][y] = e
 		}
 	}
-	return img
-}
-
-func main() {
-	args := os.Args[1:]
-	if len(args) < 3 {
-		os.Stderr.WriteString("Not enought arguments\nUsage: SquareDiamond width height path\n")
-		panic("")
-	}
-	width, err := strconv.Atoi(args[0])
-	if err != nil {
-		os.Stderr.WriteString("Error parsing width")
-		panic("")
-	}
-	height, err := strconv.Atoi(args[1])
-	if err != nil {
-		os.Stderr.WriteString("Error parsing height")
-		panic("")
-	}
-	gen := Generator{Roughness: 0.5, Width: width, Height: height}
-	hmap := gen.Generate()
-	pathToFile := args[2]
-	img := createImage(hmap, width, height)
-	saveToFile(img, pathToFile)
+	return r
 }
