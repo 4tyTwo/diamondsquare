@@ -30,7 +30,7 @@ func (gen *Generator) Generate() [][]float64 {
 	if gen.transposed {
 		gen.hmap = transpose(gen.hmap)
 	}
-	return gen.hmap
+	return truncateHeightMap(gen.hmap, gen.Height, gen.Width)
 }
 
 func (gen *Generator) eraseMap() {
@@ -143,4 +143,12 @@ func transpose(m [][]float64) [][]float64 {
 		}
 	}
 	return r
+}
+
+func truncateHeightMap(hmap [][]float64, height, width int) [][]float64 {
+	truncated := hmap[:height]
+	for i := range truncated {
+		truncated[i] = hmap[i][:width]
+	}
+	return truncated
 }
