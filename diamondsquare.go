@@ -1,4 +1,4 @@
-package main
+package diamondsquare
 
 import (
 	"math"
@@ -14,6 +14,12 @@ type Generator struct {
 	currRoughness       float64
 	genHeight, genWidth int
 	transposed          bool
+}
+
+// Generate creates a Generator with given parameters and call Generate from it
+func Generate(width, height int, roughness float64) [][]float64 {
+	g := Generator{Roughness: roughness, Height: height, Width: width}
+	return g.Generate()
 }
 
 // Generate creates heightmap
